@@ -6,6 +6,18 @@
 //  Copyright © 2018年 Leo Huang. All rights reserved.
 //
 
+/*
+    QTEventBusCollection 是一个大容器, linkListTable是可变字典 keyid : QTEventBusLinkList链表
+    QTEventBusLinkList 是一个双向链表, head, 和 tail 存放的是头尾节点
+    QTEventBusLinkNode 是节点 previous和next 存放的是上一个节点和下一个节点  值是遵守了 QTEventBusContainerValue 协议的对象
+ 
+ 
+ {
+    1599999eventofclass: QTEventBusLinkList
+ }
+ 
+ */
+
 #import "QTEventBusCollection.h"
 #include <pthread.h>
 
@@ -90,33 +102,37 @@
     previousNode.next = nextNode;
     nextNode.previous = previousNode;
 }
-
+// 更新
 - (void)appendNode:(_QTEventBusLinkNode *)node{
-    if (_head == nil) {
+    if (_head == nil) {//空链表
         _head = node;
         _tail = node;
         return;
-    }
+    }// 取出老的节点
     _QTEventBusLinkNode * oldNode = [_registeredNodeTable objectForKey:node.uniqueId];
     if (oldNode) {
+        // 有老节点, 更新老的节点
         [self replaceNode:oldNode withNode:node];
         return;
     }
+    // 没有老的节点, 加到链接尾部, 更新链表尾部
     _tail.next = node;
     node.previous = _tail;
     _tail = node;
     [_registeredNodeTable setObject:node forKey:node.uniqueId];
 }
-
+// 替换
 - (void)replaceNode:(_QTEventBusLinkNode *)old withNode:(_QTEventBusLinkNode *)update{
     update.next = old.next;
     update.previous = old.previous;
     old.previous.next = update;
     old.next.previous = update;
     if ([[old uniqueId] isEqualToString:_head.uniqueId]) {
+        // 是头
         _head = update;
     }
     if ([old.uniqueId isEqualToString:_tail.uniqueId]) {
+        // 是尾
         _tail = update;
     }
     [_registeredNodeTable setObject:update forKey:update.uniqueId];
@@ -175,7 +191,7 @@
     }
     return result;
 }
-
+// key 是groupId  单利创建时间戳事件名of类名
 - (void)addObject:(id<QTEventBusContainerValue>)object forKey:(NSString *)key{
     NSString * nodeUniqueKey = [object valueUniqueId];
     [self lockAndDo:^{

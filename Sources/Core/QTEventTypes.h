@@ -39,6 +39,8 @@
 /**
  提供一套DSL监听
  */
+
+//  https://www.jianshu.com/p/e903b67468b8 OC 泛型
 @interface QTEventSubscriberMaker<Value> : NSObject
 
 typedef void (^QTEventNextBlock)(Value event) NS_SWIFT_UNAVAILABLE("");

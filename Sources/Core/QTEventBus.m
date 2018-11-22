@@ -6,6 +6,11 @@
 //  Copyright © 2018年 Leo Huang. All rights reserved.
 //
 
+/*
+   eventBus -> collection -> linkListTable -> _QTEventBusLinkList -> _QTEventBusLinkNode -> _QTEventSubscriber
+  QTEventSubscriberMaker -> lifeTimeTracker(监听类) -> _QTEventToken -> [[token dispose];] 从collection里释放
+ */
+
 #import "QTEventBus.h"
 #import <pthread.h>
 #import <objc/runtime.h>
@@ -192,7 +197,7 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
 
 
 - (id<QTEventToken>)_createNewSubscriber:(QTEventSubscriberMaker *)maker{
-    if (!maker.hander) {
+    if (!maker.hander) { // 没有执行, 就不添加到记录里
         return nil;
     }
     if (maker.eventSubTypes.count == 0) {//一级事件
@@ -232,12 +237,16 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
 
 - (_QTEventToken *)_addSubscriberWithMaker:(QTEventSubscriberMaker *)maker eventType:(NSString *)eventType{
     __weak typeof(self) weakSelf = self;
+    // 事件名of类名
     NSString * eventKey = __generateUnqiueKey(maker.eventClass, eventType);
+    // 单利创建时间戳事件名of类名
     NSString * groupId = [self.prefix stringByAppendingString:eventKey];
+    //单利创建时间戳事件名of类名当前时间戳
     NSString * uniqueId = [groupId stringByAppendingString:@([NSDate date].timeIntervalSince1970).stringValue];
     _QTEventToken * token = [[_QTEventToken alloc] initWithKey:uniqueId];
     BOOL isCFNotifiction = (maker.eventClass == [NSNotification class]);
     if (eventType && isCFNotifiction) {
+        // 是系统的通知, 
         [self _addNotificationObserverIfNeeded:eventType];
     }
     token.onDispose = ^(NSString *uniqueId) {
@@ -245,6 +254,7 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
         if (!strongSelf) {
             return;
         }
+        // 移除监听的事件
         BOOL empty = [strongSelf.collection removeUniqueId:uniqueId ofKey:groupId];
         if (empty && isCFNotifiction) {
             [strongSelf _removeNotificationObserver:eventType];
@@ -256,6 +266,7 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
     subscriber.handler = maker.hander;
     subscriber.uniqueId = uniqueId;
     if (maker.lifeTimeTracker) {
+        // 给监听者用分类增加属性, 持有 token
         [maker.lifeTimeTracker.eb_disposeBag addToken:token];
     }
     [self.collection addObject:subscriber forKey:groupId];
@@ -263,10 +274,17 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
 }
 
 - (QTEventSubscriberMaker<id> *(^)(Class eventClass))on{
-    return ^QTEventSubscriberMaker *(Class eventClass){
+ // 作者原代码
+//    return ^QTEventSubscriberMaker *(Class eventClass){
+//        return [[QTEventSubscriberMaker alloc] initWithEventBus:self
+//                                                     eventClass:eventClass];
+//    };
+    // 分开写的过程
+    QTEventSubscriberMaker *(^marker) (Class eventClass) = ^(Class eventClass){
         return [[QTEventSubscriberMaker alloc] initWithEventBus:self
                                                      eventClass:eventClass];
     };
+    return marker;
 }
 
 - (QTEventSubscriberMaker<id> *)on:(Class)eventClass{
@@ -310,6 +328,7 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
 
 - (void)_publishKey:(NSString *)eventKey event:(NSObject *)event{
     NSString * groupId = [self.prefix stringByAppendingString:eventKey];
+    // 根据groupId 将双向链表读取出来
     NSArray * subscribers = [self.collection objectsForKey:groupId];
     if (!subscribers || subscribers.count == 0) {
         return;
@@ -389,17 +408,36 @@ static inline NSString * __generateUnqiueKey(Class<QTEvent> cls,NSString * event
 }
 
 - (QTEventSubscriberMaker<id> *(^)(id))freeWith{
+    /* 作者原代码
     return ^QTEventSubscriberMaker *(id lifeTimeTracker){
         self.lifeTimeTracker = lifeTimeTracker;
         return self;
     };
+    */
+    QTEventSubscriberMaker *(^maker)(id lifeTimeTracker) = ^(id lifeTimeTracker){
+        self.lifeTimeTracker = lifeTimeTracker;
+        return self;
+    };
+    return maker;
+    
 }
 
 - (id<QTEventToken>(^)(void(^)(id event)))next{
+    /* 作者的代码
     return ^id<QTEventToken>(void(^hander)(__kindof NSObject * event)){
+        
+        self.hander = hander;
+        // 在创建的时候, eventBus已经被赋值
+        return [self.eventBus _createNewSubscriber:self];
+    };
+    */
+    // 分开写
+    id<QTEventToken> (^token)(void (^hander)(__kindof NSObject * event)) = ^(void(^hander)(__kindof NSObject * event)){
         self.hander = hander;
         return [self.eventBus _createNewSubscriber:self];
     };
+    return token;
+    
 }
 
 @end

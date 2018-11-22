@@ -25,7 +25,7 @@
 @interface QTEventBusCollection<ValueType:id<QTEventBusContainerValue>> : NSObject
 
 /**
- 在key对应的集合中，增加一个对象
+ 在key对应的集合中，增加一个对象, key是单利创建是的时间戳 + 监听的事件名
  */
 - (void)addObject:(ValueType)object forKey:(NSString *)key;
 
